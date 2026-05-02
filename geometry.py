@@ -121,32 +121,75 @@ def crop_image(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
     return image[y_start:y_end, x_start:x_end].copy()
 
 def zoom_image(image: np.ndarray, scale: float) -> np.ndarray:
-    """Ters haritalama ve interpolasyon kullanarak yeniden boyutlandırma matrisi"""
+    """Ters haritalama ve bilinear interpolasyon. Çıktı çok büyürse ölçek otomatik kısılır (hata yok). Büyük görüntüler şeritler halinde işlenir; PyQt açıksa ara sıra processEvents ile arayüz donması azaltılır."""
     h, w = image.shape[:2]
     ch = image.shape[2] if len(image.shape) == 3 else 1
-    
-    new_h = int(h * scale)
-    new_w = int(w * scale)
-    
+
+    try:
+        scale = float(scale)
+    except (TypeError, ValueError):
+        raise ValueError("Ölçek sayısal olmalıdır.")
+    if scale <= 0:
+        raise ValueError("Ölçek 0'dan büyük olmalıdır.")
+
+    # Cikti cok buyurse olcek sessizce dusurulur (diyalog yok)
+    _MAX_SIDE = 8192
+    max_in = max(h, w)
+    if max_in * scale > _MAX_SIDE:
+        scale = _MAX_SIDE / max_in
+
+    new_h = max(1, int(round(h * scale)))
+    new_w = max(1, int(round(w * scale)))
+
     if new_h == 0 or new_w == 0:
         return image
-        
+
     if len(image.shape) == 3:
         output = np.zeros((new_h, new_w, ch), dtype=np.uint8)
     else:
         output = np.zeros((new_h, new_w), dtype=np.uint8)
-        
-    grid_x, grid_y = np.meshgrid(np.arange(new_w), np.arange(new_h))
-    
-    # Oranları ile ölçekle
-    src_x = grid_x / scale
-    src_y = grid_y / scale
-    
-    valid_mask = (src_x >= 0) & (src_x < w - 1) & (src_y >= 0) & (src_y < h - 1)
-    
-    interpolated_vals = bilinear_interpolate(image, src_y[valid_mask], src_x[valid_mask])
-    output[valid_mask] = interpolated_vals.astype(np.uint8)
-    
+
+    _BAND = 512
+    _PIXEL_CAP = 14_000_000
+    use_bands = (new_h * new_w) > _PIXEL_CAP
+    sc = np.float64(scale)
+
+    try:
+        from PyQt5.QtWidgets import QApplication
+
+        _qt_app = QApplication.instance()
+    except Exception:
+        _qt_app = None
+
+    if not use_bands:
+        grid_x, grid_y = np.meshgrid(
+            np.arange(new_w, dtype=np.float32), np.arange(new_h, dtype=np.float32)
+        )
+        src_x = grid_x.astype(np.float64) / sc
+        src_y = grid_y.astype(np.float64) / sc
+        valid_mask = (src_x >= 0) & (src_x < w - 1) & (src_y >= 0) & (src_y < h - 1)
+        interpolated_vals = bilinear_interpolate(image, src_y[valid_mask], src_x[valid_mask])
+        output[valid_mask] = interpolated_vals.astype(np.uint8)
+        return output
+
+    for y0 in range(0, new_h, _BAND):
+        y1 = min(new_h, y0 + _BAND)
+        gy2, gx2 = np.meshgrid(
+            np.arange(y0, y1, dtype=np.float64),
+            np.arange(new_w, dtype=np.float64),
+            indexing="ij",
+        )
+        src_x = gx2 / sc
+        src_y = gy2 / sc
+        valid_mask = (src_x >= 0) & (src_x < w - 1) & (src_y >= 0) & (src_y < h - 1)
+        if not np.any(valid_mask):
+            continue
+        interpolated_vals = bilinear_interpolate(image, src_y[valid_mask], src_x[valid_mask])
+        sub = output[y0:y1, ...]
+        sub[valid_mask] = interpolated_vals.astype(np.uint8)
+        if _qt_app is not None:
+            _qt_app.processEvents()
+
     return output
 
 def add_images(img1: np.ndarray, img2: np.ndarray, alpha: float = 0.5) -> np.ndarray:

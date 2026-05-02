@@ -25,7 +25,10 @@ def compute_histogram(image: np.ndarray) -> np.ndarray:
     return hist
 
 def plot_histogram(image: np.ndarray, title: str = "Histogram Analizi", ax=None) -> None:
-    """Hesaplanan histogram matrisini Matplotlib ile grafikselleştirir"""
+    """
+    Histogramı matplotlib ile çizer. ax=None iken ayrı plt.show() penceresi açar; PyQt gömülü arayüzde
+    bu yol olay döngüsüyle çakışıp çökme riski taşıyabilir — tercihen MainWindow.show_histogram_dialog kullanın.
+    """
     hist = compute_histogram(image)
     
     if ax is None:
@@ -44,17 +47,28 @@ def plot_histogram(image: np.ndarray, title: str = "Histogram Analizi", ax=None)
         ax.set_title(title)
 
 def histogram_stretching(image: np.ndarray) -> np.ndarray:
-    """Kontrastı dağıtmak için değerleri 0 ile 255 arasına yayar (Minimum-Maximum Normalizasyonu. cv2.equalizeHist yasak!)"""
-    min_val = image.min()
-    max_val = image.max()
-    
-    if max_val == min_val:
+    """Kontrastı dağıtmak için değerleri 0–255 arasına yayar (min–max normalizasyon; cv2.equalizeHist yok).
+    Renkli görüntüde her BGR kanalı kendi min/max’i ile gerilir; tek global min/max renk bozar ve geri almayı kafa karıştırır."""
+    image = np.asarray(image)
+    if image.size == 0:
         return image.copy()
-        
-    # Her pikselin aralık doğrultusunda dağıtılıp çekilmesi (Stretching Formülü):
-    stretched = (image.astype(np.float64) - min_val) / (max_val - min_val) * 255.0
-    
-    return np.clip(stretched, 0, 255).astype(np.uint8)
+
+    def _stretch_gray(ch: np.ndarray) -> np.ndarray:
+        ch = np.ascontiguousarray(ch)
+        mn = float(ch.min())
+        mx = float(ch.max())
+        if mx == mn:
+            return np.clip(np.rint(mn), 0, 255).astype(np.uint8)
+        s = (ch.astype(np.float64) - mn) / (mx - mn) * 255.0
+        return np.clip(s, 0, 255).astype(np.uint8)
+
+    if len(image.shape) == 3 and image.shape[2] >= 1:
+        out = np.empty(image.shape[:2] + (image.shape[2],), dtype=np.uint8)
+        for c in range(image.shape[2]):
+            out[:, :, c] = _stretch_gray(image[:, :, c])
+        return np.ascontiguousarray(out)
+
+    return np.ascontiguousarray(_stretch_gray(image))
 
 def contrast_enhancement(image: np.ndarray, factor: float) -> np.ndarray:
     """Orta nokta (128) baz alınarak lineer kontrast artırma (Alfa çarpımı yerine Orta-Nokta denklemi)"""
@@ -100,25 +114,33 @@ def add_salt_pepper_noise(image: np.ndarray, ratio: float = 0.05) -> np.ndarray:
 def image_averaging(*args) -> np.ndarray:
     """
     Aynı belgenin birden fazla karesinin değerlerini (matrislerini) toplayıp ortalama değerini bularak sensör veya grain gürültüsünü azaltır.
-    Not: Arayüz (main.py) uyumu için imza olarak hem tuple (img1, img2, ...) hem de liste formatını kabul edebilir.
+    main.py uyumu: ayrı argümanlar (img1, img2), liste [img1, img2] veya tek tuple (img1, img2) kabul edilir.
+    Boyutlar (yükseklik × genişlik × kanal) birebir aynı değilse ValueError fırlatılır (sessiz kırpma yok).
     """
-    if len(args) == 1 and isinstance(args[0], list):
-        images_list = args[0]
+    if len(args) == 1:
+        first = args[0]
+        if isinstance(first, np.ndarray):
+            images_list = [first]
+        elif isinstance(first, (list, tuple)):
+            images_list = list(first)
+        else:
+            raise TypeError("Görüntü listesi NumPy ndarray, liste veya demet olmalıdır.")
     else:
         images_list = list(args)
-        
+
     if not images_list:
         raise ValueError("Ortalama almak için en az 1 görüntü gereklidir.")
-        
-    # İki görselde birkaç piksellik kayma veya boşluk varsa sistemin çökmemesi için ufak olanın boyutuna kırpar
-    min_h = min([img.shape[0] for img in images_list])
-    min_w = min([img.shape[1] for img in images_list])
-    
-    cropped_images = []
-    for img in images_list:
-        cropped_images.append(img[:min_h, :min_w])
-        
-    stack = np.array(cropped_images, dtype=np.float64)
-    avg_img = np.mean(stack, axis=0) # Tümünü "N" sayısına böler
-    
+    if not all(isinstance(im, np.ndarray) for im in images_list):
+        raise TypeError("Tüm öğeler NumPy ndarray olmalıdır.")
+
+    ref_shape = images_list[0].shape
+    for idx, img in enumerate(images_list[1:], start=2):
+        if img.shape != ref_shape:
+            raise ValueError(
+                f"Görüntü boyutları eşleşmiyor (1. görüntü {ref_shape}, {idx}. görüntü {img.shape}). "
+                "Ortalama için tüm görüntülerin yükseklik, genişlik ve kanal sayısı aynı olmalıdır."
+            )
+
+    stack = np.array(images_list, dtype=np.float64)
+    avg_img = np.mean(stack, axis=0)
     return np.clip(avg_img, 0, 255).astype(np.uint8)

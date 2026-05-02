@@ -41,17 +41,50 @@ def _convolve2d_single(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     
     # İç içe döngünün yaptığı her iterasyondaki "çarp_ve_topla (np.sum)" işlemi:
     output = np.sum(windows * kernel, axis=(2, 3))
-    
+
+    # Çift boyutlu çekirdek veya yuvarlama farkı: çıktı (H,W) olmayabilir; merkezden kırp.
+    oh, ow = output.shape
+    if (oh, ow) != (H, W):
+        if oh >= H and ow >= W:
+            sy = (oh - H) // 2
+            sx = (ow - W) // 2
+            output = output[sy : sy + H, sx : sx + W]
+        else:
+            raise ValueError(
+                f"Konvolüsyon çıktısı beklenen {(H, W)} değil, {output.shape}. "
+                "Çekirdek boyutunu tek (3,5,7,…) seçin veya görüntü çok küçük olabilir."
+            )
+
     return np.clip(output, 0, 255)
 
 def mean_filter(image: np.ndarray, kernel_size: int = 3) -> np.ndarray:
     """Mean (Ortalama/Blur) Filtresi - İçerisindeki her ağırlık eşittir."""
-    # Filtrenin tüm ağırlıkları 1, ancak toplamları 1'e denkleştirmek için boyuta bölünür
-    kernel = np.ones((kernel_size, kernel_size), dtype=np.float64) / (kernel_size**2)
+    k = int(kernel_size)
+    if k < 1:
+        k = 3
+    if k % 2 == 0:
+        k += 1
+    h, w = image.shape[:2]
+    if h < k or w < k:
+        raise ValueError(
+            f"Görüntü ({w}×{h}) çekirdek boyutundan ({k}) küçük; önce daha büyük görüntü yükleyin veya kırpın."
+        )
+    kernel = np.ones((k, k), dtype=np.float64) / (k * k)
     return convolve2d(image, kernel)
 
 def median_filter(image: np.ndarray, kernel_size: int = 3) -> np.ndarray:
     """Median Filtresi - Konvolüsyonla ÇARPMA YASAKTIR, sıralanıp medyan değer alınması gerekir! (cv2.medianBlur yasak)"""
+    k = int(kernel_size)
+    if k < 1:
+        k = 3
+    if k % 2 == 0:
+        k += 1
+    h, w = image.shape[:2]
+    if h < k or w < k:
+        raise ValueError(
+            f"Görüntü ({w}×{h}) pencereden ({k}×{k}) küçük; median uygulanamaz."
+        )
+    kernel_size = k
     if len(image.shape) == 3:
         output = np.zeros_like(image, dtype=np.uint8)
         for c in range(image.shape[2]):
