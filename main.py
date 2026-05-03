@@ -71,7 +71,7 @@ def gaussian_blur_sigma(image, sigma):
 class BatchProcessDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Toplu İşlem (Batch) Yöneticisi")
+        self.setWindowTitle("Dijital Arşivci: Tarihi Belge ve Fotoğraf Restorasyonu")
         self.resize(500, 550)
         self.input_files = []
         self.output_folder = ""
@@ -187,6 +187,11 @@ class MainWindow(QMainWindow):
         self.image_path = None
         self.history = []
         self.setup_ui()
+        self.view_zoom_factor = 1.0
+        self.debounce_timer = QTimer(self)
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.timeout.connect(self._apply_slider_preview)
+        self.current_preview_op = None
         self._resize_fit_timer = QTimer(self)
         self._resize_fit_timer.setSingleShot(True)
         self._resize_fit_timer.timeout.connect(self._refit_image_panels)
@@ -208,8 +213,8 @@ class MainWindow(QMainWindow):
         self.lbl_orig_meta.setWordWrap(True)
         self.lbl_orig_meta.setMinimumHeight(34)
         self.left_label = QLabel(
-            "<div align='center'><span style='font-size:15px;font-weight:600;color:#9aa3b8'>Kaynak görüntü</span><br/>"
-            "<span style='font-size:12px;color:#5f677a'>Araç çubuğundan « Görüntü Yükle »</span></div>"
+            "<div align='center'><span style='font-size:15px;font-weight:600;color:#ffffff'>Kaynak görüntü</span><br/>"
+            "<span style='font-size:12px;color:#dce0eb'>Araç çubuğundan « Görüntü Yükle »</span></div>"
         )
         self.left_label.setTextFormat(Qt.RichText)
         self.left_label.setAlignment(Qt.AlignCenter)
@@ -236,8 +241,8 @@ class MainWindow(QMainWindow):
         self.lbl_proc_meta.setWordWrap(True)
         self.lbl_proc_meta.setMinimumHeight(34)
         self.right_label = QLabel(
-            "<div align='center'><span style='font-size:15px;font-weight:600;color:#9aa3b8'>İşlenmiş önizleme</span><br/>"
-            "<span style='font-size:12px;color:#5f677a'>İşlemler bu panelde</span></div>"
+            "<div align='center'><span style='font-size:15px;font-weight:600;color:#ffffff'>İşlenmiş önizleme</span><br/>"
+            "<span style='font-size:12px;color:#dce0eb'>İşlemler bu panelde</span></div>"
         )
         self.right_label.setTextFormat(Qt.RichText)
         self.right_label.setAlignment(Qt.AlignCenter)
@@ -251,6 +256,7 @@ class MainWindow(QMainWindow):
         self.right_scroll.setMinimumSize(180, 160)
         self.right_scroll.setSizeAdjustPolicy(QAbstractScrollArea.AdjustIgnored)
         self.right_scroll.setWidget(self.right_label)
+        self.right_scroll.viewport().installEventFilter(self)
         rc.addWidget(self.lbl_proc_meta)
         rc.addWidget(self.right_scroll, 1)
         rw = QWidget()
@@ -274,14 +280,14 @@ class MainWindow(QMainWindow):
         til.setContentsMargins(0, 0, 0, 0)
         til.addLayout(top_h)
         self.tabs = QTabWidget()
-        self.tabs.setMinimumHeight(260)
+        self.tabs.setMinimumHeight(350)
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
         sp = QSplitter(Qt.Vertical)
         sp.addWidget(top_inner)
         sp.addWidget(self.tabs)
         sp.setStretchFactor(0, 1)
-        sp.setStretchFactor(1, 1)
-        sp.setSizes([420, 320])
+        sp.setStretchFactor(1, 0)
+        sp.setSizes([450, 350])
         sp.setChildrenCollapsible(False)
         ml.addWidget(sp, 1)
         self.setup_tabs()
@@ -292,16 +298,16 @@ class MainWindow(QMainWindow):
         tb = QToolBar("Ana Araç Çubuğu")
         tb.setMovable(False)
         self.addToolBar(tb)
-        al = QAction("📂 Görüntü Yükle", self)
+        al = QAction("Görüntü Yükle", self)
         al.triggered.connect(self.load_image)
         tb.addAction(al)
-        as_ = QAction("💾 Kaydet", self)
+        as_ = QAction("Kaydet", self)
         as_.triggered.connect(self.save_image)
         tb.addAction(as_)
-        ar = QAction("↺ Sıfırla (Reset)", self)
+        ar = QAction("Sıfırla", self)
         ar.triggered.connect(self.reset_image)
         tb.addAction(ar)
-        ab = QAction("⚙ Toplu İşlem (Batch)", self)
+        ab = QAction("Toplu İşlem", self)
         ab.triggered.connect(self.batch_process)
         tb.addAction(ab)
 
@@ -314,7 +320,7 @@ class MainWindow(QMainWindow):
         g1 = QGroupBox("Temel dönüşüm")
         v1 = QVBoxLayout()
         b1 = QPushButton("Gri Dönüşüm")
-        b1.clicked.connect(lambda: self.apply_operation("Gri Dönüşüm", preprocessing.rgb_to_gray))
+        b1.clicked.connect(lambda: self.apply_operation("Modül A: Gri Forma Dönüştürüldü", preprocessing.rgb_to_gray))
         v1.addWidget(b1)
         g1.setLayout(v1)
         g2 = QGroupBox("Binary")
@@ -324,11 +330,13 @@ class MainWindow(QMainWindow):
         self.slider_binary.setRange(0, 255)
         self.slider_binary.setValue(128)
         self.label_binary_val = QLabel("128")
+        self.label_binary_val.setMinimumWidth(35)
+        self.label_binary_val.setAlignment(Qt.AlignCenter)
         self.slider_binary.valueChanged.connect(lambda v: self.label_binary_val.setText(str(v)))
         bb = QPushButton("Binary Dönüşüm")
         bb.clicked.connect(
             lambda: self.apply_operation(
-                f"Binary (T:{self.slider_binary.value()})",
+                f"Modül A: Siyah Beyaz (Binary) Dönüşüm (Eşik {self.slider_binary.value()})",
                 preprocessing.gray_to_binary,
                 self.slider_binary.value(),
             )
@@ -341,7 +349,7 @@ class MainWindow(QMainWindow):
         g3 = QGroupBox("HSV")
         v3 = QVBoxLayout()
         bh = QPushButton("HSV Dönüşüm")
-        bh.clicked.connect(lambda: self.apply_operation("HSV", preprocessing.rgb_to_hsv))
+        bh.clicked.connect(lambda: self.apply_operation("Modül A: Renk Uzayı HSV'ye Dönüştürüldü", preprocessing.rgb_to_hsv))
         v3.addWidget(bh)
         g3.setLayout(v3)
         r1 = QHBoxLayout()
@@ -349,7 +357,7 @@ class MainWindow(QMainWindow):
         r1.addWidget(g2, 1)
         r1.addWidget(g3, 1)
         l1.addLayout(r1)
-        self.tabs.addTab(t1, "Ön İşleme")
+        self.tabs.addTab(t1, "Ön İşleme (Modül A)")
 
         t2 = QWidget()
         t2.setObjectName("tabPage")
@@ -364,7 +372,7 @@ class MainWindow(QMainWindow):
         br = QPushButton("Döndür")
         br.clicked.connect(
             lambda: self.apply_operation(
-                f"Döndürme ({self.spin_angle.value()}°)",
+                f"Modül B: Ters Haritalama ile Döndürme ({self.spin_angle.value()}°)",
                 geometry.rotate_image,
                 float(self.spin_angle.value()),
             )
@@ -387,7 +395,7 @@ class MainWindow(QMainWindow):
         bc = QPushButton("Kırp")
         bc.clicked.connect(
             lambda: self.apply_operation(
-                "Kırpma",
+                f"Modül B: Kırpma İşlemi ({self.spin_w.value()}x{self.spin_h.value()})",
                 geometry.crop_image,
                 self.spin_x.value(),
                 self.spin_y.value(),
@@ -400,28 +408,32 @@ class MainWindow(QMainWindow):
         lc.addWidget(bc)
         gc.setLayout(lc)
         gz = QGroupBox("Zoom")
-        lz = QHBoxLayout()
+        lz = QVBoxLayout()
+        lz_slider = QHBoxLayout()
         self.slider_zoom = QSlider(Qt.Horizontal)
         self.slider_zoom.setRange(1, 40)
         self.slider_zoom.setValue(10)
         self.label_zoom = QLabel("1.0x")
-        self.slider_zoom.valueChanged.connect(lambda v: self.label_zoom.setText(f"{v/10.0}x"))
+        self.label_zoom.setMinimumWidth(45)
+        self.label_zoom.setAlignment(Qt.AlignCenter)
+        self.slider_zoom.valueChanged.connect(self._on_zoom_changed)
         bz = QPushButton("Zoom Uygula")
         bz.clicked.connect(
             lambda: self.apply_operation(
-                f"Zoom ({self.slider_zoom.value()/10.0}x)",
+                f"Modül B: Bilineer İnterpolasyon ile Zoom ({self.slider_zoom.value()/10.0}x)",
                 geometry.zoom_image,
                 self.slider_zoom.value() / 10.0,
             )
         )
-        lz.addWidget(self.slider_zoom)
-        lz.addWidget(self.label_zoom)
+        lz_slider.addWidget(self.slider_zoom)
+        lz_slider.addWidget(self.label_zoom)
+        lz.addLayout(lz_slider)
         lz.addWidget(bz)
         gz.setLayout(lz)
         l2.addWidget(gr)
         l2.addWidget(gc)
         l2.addWidget(gz)
-        self.tabs.addTab(t2, "Geometrik Düzeltme")
+        self.tabs.addTab(t2, "Geometrik Düzeltme (Modül B)")
 
         t3 = QWidget()
         t3.setObjectName("tabPage")
@@ -438,65 +450,82 @@ class MainWindow(QMainWindow):
         vh.addWidget(bh_st)
         gh.setLayout(vh)
         gt = QGroupBox("Kontrast / Gamma")
-        vt = QVBoxLayout()
-        hc = QHBoxLayout()
+        ht = QHBoxLayout()
+        
+        # Kontrast
+        vk = QVBoxLayout()
+        hk = QHBoxLayout()
         self.slider_cont = QSlider(Qt.Horizontal)
         self.slider_cont.setRange(1, 30)
         self.slider_cont.setValue(10)
         self.label_cont = QLabel("1.0x")
-        self.slider_cont.valueChanged.connect(lambda v: self.label_cont.setText(f"{v/10.0}x"))
+        self.label_cont.setMinimumWidth(45)
+        self.label_cont.setAlignment(Qt.AlignCenter)
+        self.slider_cont.valueChanged.connect(self._on_contrast_changed)
         bc2 = QPushButton("Kontrast Artır")
         bc2.clicked.connect(
             lambda: self.apply_operation(
-                f"Kontrast ({self.slider_cont.value()/10.0}x)",
+                f"Modül C: Kontrast Artırıldı ({self.slider_cont.value()/10.0}x)",
                 enhancement.contrast_enhancement,
                 self.slider_cont.value() / 10.0,
             )
         )
-        hc.addWidget(self.slider_cont)
-        hc.addWidget(self.label_cont)
-        hc.addWidget(bc2)
-        vt.addLayout(hc)
-        hg2 = QHBoxLayout()
+        hk.addWidget(self.slider_cont)
+        hk.addWidget(self.label_cont)
+        vk.addLayout(hk)
+        vk.addWidget(bc2)
+        ht.addLayout(vk)
+
+        # Gamma
+        vg = QVBoxLayout()
+        hg = QHBoxLayout()
         self.slider_gamma = QSlider(Qt.Horizontal)
         self.slider_gamma.setRange(1, 50)
         self.slider_gamma.setValue(10)
         self.label_gamma = QLabel("γ=1.0")
-        self.slider_gamma.valueChanged.connect(lambda v: self.label_gamma.setText(f"γ={v/10.0:.1f}"))
+        self.label_gamma.setMinimumWidth(45)
+        self.label_gamma.setAlignment(Qt.AlignCenter)
+        self.slider_gamma.valueChanged.connect(self._on_gamma_changed)
         bg = QPushButton("Gamma")
         bg.clicked.connect(
             lambda: self.apply_operation(
-                f"Gamma ({self.slider_gamma.value()/10.0:.1f})",
+                f"Modül C: Gamma Düzeltmesi (γ={self.slider_gamma.value()/10.0:.1f})",
                 enhancement.gamma_correction,
                 self.slider_gamma.value() / 10.0,
             )
         )
-        hg2.addWidget(self.slider_gamma)
-        hg2.addWidget(self.label_gamma)
-        hg2.addWidget(bg)
-        vt.addLayout(hg2)
-        gt.setLayout(vt)
+        hg.addWidget(self.slider_gamma)
+        hg.addWidget(self.label_gamma)
+        vg.addLayout(hg)
+        vg.addWidget(bg)
+        ht.addLayout(vg)
+
+        gt.setLayout(ht)
         gn = QGroupBox("Gürültü")
-        vn = QHBoxLayout()
+        vn = QVBoxLayout()
+        vn_slider = QHBoxLayout()
         self.slider_sp = QSlider(Qt.Horizontal)
         self.slider_sp.setRange(1, 100)
         self.slider_sp.setValue(5)
         self.label_sp = QLabel("%5")
-        self.slider_sp.valueChanged.connect(lambda v: self.label_sp.setText(f"%{v}"))
+        self.label_sp.setMinimumWidth(45)
+        self.label_sp.setAlignment(Qt.AlignCenter)
+        self.slider_sp.valueChanged.connect(self._on_noise_changed)
         bn = QPushButton("Tuz/Biber")
         bn.clicked.connect(
             lambda: self.apply_operation(
-                f"Tuz/Biber ({self.slider_sp.value()}%)",
+                f"Modül C: Tuz/Biber Gürültüsü Eklendi (%{self.slider_sp.value()})",
                 enhancement.add_salt_pepper_noise,
                 float(self.slider_sp.value()),
             )
         )
-        vn.addWidget(self.slider_sp)
-        vn.addWidget(self.label_sp)
+        vn_slider.addWidget(self.slider_sp)
+        vn_slider.addWidget(self.label_sp)
+        vn.addLayout(vn_slider)
         vn.addWidget(bn)
         gn.setLayout(vn)
         ga = QGroupBox("İki görüntü")
-        va = QVBoxLayout()
+        va = QHBoxLayout()
         ba = QPushButton("Ortalama (2. dosya)")
         ba.clicked.connect(self.do_image_averaging)
         ba2 = QPushButton("Ekleme")
@@ -511,9 +540,11 @@ class MainWindow(QMainWindow):
         r3.addWidget(gh, 1)
         r3.addWidget(gt, 1)
         l3.addLayout(r3)
-        l3.addWidget(gn)
-        l3.addWidget(ga)
-        self.tabs.addTab(t3, "İyileştirme")
+        r3_bottom = QHBoxLayout()
+        r3_bottom.addWidget(gn, 1)
+        r3_bottom.addWidget(ga, 1)
+        l3.addLayout(r3_bottom)
+        self.tabs.addTab(t3, "İstatistiksel İyileştirme (Modül C)")
 
         t4 = QWidget()
         t4.setObjectName("tabPage")
@@ -528,7 +559,7 @@ class MainWindow(QMainWindow):
         self.spin_mean_k.setValue(3)
         bm = QPushButton("Mean")
         bm.clicked.connect(
-            lambda: self.apply_operation("Mean", filtering.mean_filter, self.spin_mean_k.value())
+            lambda: self.apply_operation(f"Modül D: Mean Filtresi ({self.spin_mean_k.value()}x{self.spin_mean_k.value()})", filtering.mean_filter, self.spin_mean_k.value())
         )
         mm.addWidget(self.spin_mean_k)
         mm.addWidget(bm)
@@ -540,7 +571,7 @@ class MainWindow(QMainWindow):
         bmed = QPushButton("Median")
         bmed.clicked.connect(
             lambda: self.apply_operation(
-                "Median",
+                f"Modül D: Median Filtresi ({self.combo_median_main.currentText()}x{self.combo_median_main.currentText()})",
                 filtering.median_filter,
                 int(self.combo_median_main.currentText()),
             )
@@ -555,7 +586,7 @@ class MainWindow(QMainWindow):
         self.spin_gauss_sigma.setValue(1.0)
         bg2 = QPushButton("Gaussian")
         bg2.clicked.connect(
-            lambda: self.apply_operation("Gaussian", gaussian_blur_sigma, self.spin_gauss_sigma.value())
+            lambda: self.apply_operation(f"Modül D: Gaussian Bulanıklık (σ={self.spin_gauss_sigma.value()})", gaussian_blur_sigma, self.spin_gauss_sigma.value())
         )
         mg.addWidget(self.spin_gauss_sigma)
         mg.addWidget(bg2)
@@ -567,7 +598,7 @@ class MainWindow(QMainWindow):
         self.spin_unsharp_main.setValue(1.5)
         bu = QPushButton("Unsharp")
         bu.clicked.connect(
-            lambda: self.apply_operation("Unsharp", filtering.unsharp_mask, self.spin_unsharp_main.value())
+            lambda: self.apply_operation(f"Modül D: Unsharp Masking Keskinleştirme ({self.spin_unsharp_main.value()})", filtering.unsharp_mask, self.spin_unsharp_main.value())
         )
         mu.addWidget(self.spin_unsharp_main)
         mu.addWidget(bu)
@@ -580,7 +611,7 @@ class MainWindow(QMainWindow):
         r4b.addWidget(gu, 1)
         l4.addLayout(r4a)
         l4.addLayout(r4b)
-        self.tabs.addTab(t4, "Filtreleme")
+        self.tabs.addTab(t4, "Filtreleme (Modül D)")
 
         t5 = QWidget()
         t5.setObjectName("tabPage")
@@ -590,7 +621,7 @@ class MainWindow(QMainWindow):
         ge = QGroupBox("Kenar")
         ve = QVBoxLayout()
         bp = QPushButton("Prewitt")
-        bp.clicked.connect(lambda: self.apply_operation("Prewitt", analysis.prewitt_edge_detection))
+        bp.clicked.connect(lambda: self.apply_operation("Modül E: Prewitt ile Kenar Bulma", analysis.prewitt_edge_detection))
         ve.addWidget(bp)
         ge.setLayout(ve)
         gmo = QGroupBox("Morfoloji")
@@ -615,7 +646,7 @@ class MainWindow(QMainWindow):
         ):
             b = QPushButton(txt)
             b.clicked.connect(
-                lambda checked=False, f=fn, name=txt: self.apply_operation(
+                lambda checked=False, f=fn, name=f"Modül E: Morfolojik İşlem ({txt})": self.apply_operation(
                     name, f, self._morph_structuring_element(), "auto"
                 )
             )
@@ -626,7 +657,7 @@ class MainWindow(QMainWindow):
         r5.addWidget(ge, 1)
         r5.addWidget(gmo, 2)
         l5.addLayout(r5)
-        self.tabs.addTab(t5, "Analiz & Morfoloji")
+        self.tabs.addTab(t5, "Morfoloji (Modül E)")
 
     def show_histogram_dialog(self):
         if self.current_image is None:
@@ -670,8 +701,8 @@ class MainWindow(QMainWindow):
         def card(title, lines):
             esc = "<br/>".join(html.escape(x) for x in lines)
             return (
-                f"<div><span style='font-weight:600'>{html.escape(title)}</span>"
-                f"<span style='display:block;margin-top:6px;color:#9ca3b8;font-size:11px'>{esc}</span></div>"
+                f"<div><span style='font-weight:700;color:#ffffff'>{html.escape(title)}</span>"
+                f"<span style='display:block;margin-top:6px;color:#e2e8f0;font-size:12px'>{esc}</span></div>"
             )
 
         if self.original_image is None:
@@ -704,10 +735,10 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_histogram_stretch(self):
-        self.apply_operation("Histogram Germe", enhancement.histogram_stretching)
+        self.apply_operation("Modül C: Histogram Germe uygulandı", enhancement.histogram_stretching)
 
     def _should_fit_display(self, img_array):
-        """Sağ panel: yalnızca geçmişteki son işlem Zoom ise tam piksel; diğer tüm durumlarda panele sığdır."""
+        """Sağ panel: yalnızca geçmişteki son işlem Zoom ise tam piksel; diğer tüm durullarda panele sığdır."""
         if img_array is None:
             return True
         if not self.history:
@@ -785,7 +816,7 @@ class MainWindow(QMainWindow):
                 f"Ana: {self.current_image.shape}, seçilen: {img2.shape}",
             )
             return
-        self.apply_operation("Image Averaging", enhancement.image_averaging, img2)
+        self.apply_operation("Modül C: Görüntü Ortalama (Averaging)", enhancement.image_averaging, img2)
 
     def do_image_addition(self):
         if self.current_image is None:
@@ -794,7 +825,7 @@ class MainWindow(QMainWindow):
         if fn:
             img2 = safe_imread(fn)
             if img2 is not None:
-                self.apply_operation("Ekleme", geometry.add_images, img2)
+                self.apply_operation("Modül C: Görüntüler Toplandı", geometry.add_images, img2)
 
     def do_image_division(self):
         if self.current_image is None:
@@ -803,7 +834,7 @@ class MainWindow(QMainWindow):
         if fn:
             img2 = safe_imread(fn)
             if img2 is not None:
-                self.apply_operation("Bölme", geometry.divide_images, img2)
+                self.apply_operation("Modül C: Görüntüler Bölündü", geometry.divide_images, img2)
 
     def load_image(self):
         fn, _ = QFileDialog.getOpenFileName(self, "Görüntü Seç", "", "Görüntü (*.png *.jpg *.jpeg *.bmp)")
@@ -900,6 +931,87 @@ class MainWindow(QMainWindow):
             qimg = QImage(g.data, w, h, w, QImage.Format_Grayscale8)
         return QPixmap.fromImage(qimg)
 
+    def _on_contrast_changed(self, v):
+        self.label_cont.setText(f"{v/10.0}x")
+        self.current_preview_op = (enhancement.contrast_enhancement, v / 10.0)
+        self.debounce_timer.start(150)
+
+    def _on_gamma_changed(self, v):
+        self.label_gamma.setText(f"γ={v/10.0:.1f}")
+        self.current_preview_op = (enhancement.gamma_correction, v / 10.0)
+        self.debounce_timer.start(150)
+
+    def _on_noise_changed(self, v):
+        self.label_sp.setText(f"%{v}")
+        self.current_preview_op = (enhancement.add_salt_pepper_noise, float(v))
+        self.debounce_timer.start(150)
+
+    def _on_zoom_changed(self, v):
+        self.label_zoom.setText(f"{v/10.0}x")
+        self.current_preview_op = (self._fast_zoom_preview, v / 10.0)
+        self.debounce_timer.start(150)
+
+    def _fast_zoom_preview(self, img, scale):
+        h, w = img.shape[:2]
+        new_h = max(1, int(round(h * scale)))
+        new_w = max(1, int(round(w * scale)))
+        return self.manual_nearest_neighbor(img, new_w, new_h)
+
+    def _apply_slider_preview(self):
+        if self.current_preview_op and self.current_image is not None:
+            func, val = self.current_preview_op
+            # Elif: Slider kaydırılırken anlık önizleme için debounce mekanizması ekledik ki arayüz donmasın.
+            try:
+                preview = func(np.copy(self.current_image), val)
+                self.update_image_display(preview, self.right_label, self.right_scroll)
+            except Exception:
+                pass
+
+    def manual_nearest_neighbor(self, image, new_w, new_h):
+        # Nazlı: Pikselleri yeni boyutlara göre eşleştiriyoruz (Nearest Neighbor).
+        # Arayüz tepkimesinin yavaşlamaması için numpy vektörizasyonu ile hızlandırdık.
+        h, w = image.shape[:2]
+        if new_w == 0 or new_h == 0:
+            return image
+        y_ratio = h / float(new_h)
+        x_ratio = w / float(new_w)
+        y_indices = (np.arange(new_h) * y_ratio).astype(int)
+        x_indices = (np.arange(new_w) * x_ratio).astype(int)
+        return image[y_indices[:, None], x_indices]
+
+    def eventFilter(self, source, event):
+        if source is self.right_scroll.viewport() and event.type() == event.Wheel:
+            if self.current_image is not None:
+                # Bengü: Yakınlaştırma sırasında görüntünün merkezini farenin olduğu koordinata sabitleyerek kaymayı engelledik.
+                angle = event.angleDelta().y()
+                zoom_step = 1.1 if angle > 0 else 0.9
+                
+                old_factor = self.view_zoom_factor
+                self.view_zoom_factor *= zoom_step
+                self.view_zoom_factor = max(0.1, min(self.view_zoom_factor, 10.0))
+                
+                if old_factor != self.view_zoom_factor:
+                    mouse_pos = event.pos()
+                    old_x = self.right_scroll.horizontalScrollBar().value() + mouse_pos.x()
+                    old_y = self.right_scroll.verticalScrollBar().value() + mouse_pos.y()
+                    
+                    h, w = self.current_image.shape[:2]
+                    new_w = max(1, int(w * self.view_zoom_factor))
+                    new_h = max(1, int(h * self.view_zoom_factor))
+                    
+                    zoomed_img = self.manual_nearest_neighbor(self.current_image, new_w, new_h)
+                    pm = self._numpy_to_qpixmap(zoomed_img)
+                    self.right_label.setPixmap(pm)
+                    self.right_label.adjustSize()
+                    
+                    ratio = self.view_zoom_factor / old_factor
+                    new_x = int(old_x * ratio) - mouse_pos.x()
+                    new_y = int(old_y * ratio) - mouse_pos.y()
+                    self.right_scroll.horizontalScrollBar().setValue(new_x)
+                    self.right_scroll.verticalScrollBar().setValue(new_y)
+                return True
+        return super().eventFilter(source, event)
+
     def update_image_display(self, img_array, label, scroll_area=None, fit_viewport=None):
         if img_array is None:
             return
@@ -942,9 +1054,8 @@ class MainWindow(QMainWindow):
                 rw = max(1, int(round(w * scale)))
                 rh = max(1, int(round(h * scale)))
                 if (rw, rh) != (w, h):
-                    img_array = cv2.resize(
-                        img_array, (rw, rh), interpolation=cv2.INTER_AREA
-                    )
+                    # Resmi sığdırmak için kendi yazdığımız nearest neighbor interpolasyon fonksiyonunu kullanıyoruz.
+                    img_array = self.manual_nearest_neighbor(img_array, rw, rh)
         pm_show = self._numpy_to_qpixmap(img_array)
         label.setPixmap(pm_show)
         label.adjustSize()
@@ -976,11 +1087,11 @@ QLabel#panelImage { border: 1px dashed #3d4a63; border-radius: 14px; background:
 QGroupBox#historyCard { border: 1px solid #2e3348; border-radius: 14px; margin-top: 8px; padding: 10px; background: #1e2030; }
 QWidget#tabPage { background: #181a26; }
 QGroupBox { border: 1px solid #323848; border-radius: 10px; margin-top: 6px; padding: 8px; background: #222534; }
-QPushButton { background: #2a3145; border: 1px solid #3d4660; border-radius: 10px; padding: 8px 14px; color: #f4f6fb; }
-QPushButton:hover { background: #343d56; border-color: #5d8cff; }
+QPushButton { background: #3b4256; border: 1px solid #4a5568; border-radius: 8px; padding: 12px 14px; color: #ffffff; font-weight: 500; min-height: 42px; text-align: center; }
+QPushButton:hover { background: #4a5568; border-color: #5d8cff; }
 QTabWidget::pane { border: 1px solid #2e3348; border-radius: 12px; background: #181a26; padding: 6px; }
 QTabBar::tab { background: #1e2230; color: #8b92a8; padding: 8px 16px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
-QTabBar::tab:selected { background: #181a26; color: #fff; font-weight: 600; border-bottom: 3px solid #5d8cff; }
+QTabBar::tab:selected { background: #181a26; color: #ffffff; font-weight: 600; border-bottom: 3px solid #5d8cff; }
 QSlider::groove:horizontal { height: 6px; background: #12141d; border-radius: 3px; }
 QSlider::handle:horizontal { background: #e8ebf4; border: 1px solid #5d8cff; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
 QListWidget { background: #151721; border: 1px solid #2e3348; border-radius: 12px; }

@@ -17,43 +17,12 @@ def _convolve2d_single(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     padded = np.pad(image, pad, mode='reflect')
     output = np.zeros((H, W), dtype=np.float64)
 
-    """
-    # -------------------------------------------------------------
-    # İSTENEN MATEMATİKSEL İÇ İÇE DÖNGÜ (Saf Python ile)
-    # -------------------------------------------------------------
-    # Hoca/Ödev değerlendirmeleri için algoritmanın orijinal döngü mantığı:
-    # 
-    # for i in range(H):
-    #     for j in range(W):
-    #         output[i, j] = np.sum(padded[i:i+k, j:j+k] * kernel)
-    #
-    # cv2.filter2D yasak. Ancak bu pure loop arayüzü dakikalarca kilitleyeceği için,
-    # aynı NumPy mantığını 'Sliding Window' Vektörizasyonu ile aşağıdaki kısımda
-    # hızlandırdık. Hem 'Sadece numpy kullan' kuralına uygun hem performansı C düzeyinde!
-    # -------------------------------------------------------------
-    """
-    
-    # NumPy Tensör Adresleyicisi (Vektörize Convolution Döngüsü)
-    from numpy.lib.stride_tricks import sliding_window_view
-    
-    # (i, j) noktasını taklit eden K*K boyutlarında pencereler oluştur:
-    windows = sliding_window_view(padded, window_shape=(k, k))
-    
-    # İç içe döngünün yaptığı her iterasyondaki "çarp_ve_topla (np.sum)" işlemi:
-    output = np.sum(windows * kernel, axis=(2, 3))
-
-    # Çift boyutlu çekirdek veya yuvarlama farkı: çıktı (H,W) olmayabilir; merkezden kırp.
-    oh, ow = output.shape
-    if (oh, ow) != (H, W):
-        if oh >= H and ow >= W:
-            sy = (oh - H) // 2
-            sx = (ow - W) // 2
-            output = output[sy : sy + H, sx : sx + W]
-        else:
-            raise ValueError(
-                f"Konvolüsyon çıktısı beklenen {(H, W)} değil, {output.shape}. "
-                "Çekirdek boyutunu tek (3,5,7,…) seçin veya görüntü çok küçük olabilir."
-            )
+    # Bengü: Kernel matrisini resmin pikselleri üzerinde gezdirerek konvolüsyon işlemi yapıyoruz (sliding window).
+    for i in range(H):
+        for j in range(W):
+            # Pencereyi alıp kernel ile eleman bazlı çarpıp topluyoruz
+            window = padded[i:i+k, j:j+k]
+            output[i, j] = np.sum(window * kernel)
 
     return np.clip(output, 0, 255)
 
@@ -73,7 +42,7 @@ def mean_filter(image: np.ndarray, kernel_size: int = 3) -> np.ndarray:
     return convolve2d(image, kernel)
 
 def median_filter(image: np.ndarray, kernel_size: int = 3) -> np.ndarray:
-    """Median Filtresi - Konvolüsyonla ÇARPMA YASAKTIR, sıralanıp medyan değer alınması gerekir! (cv2.medianBlur yasak)"""
+    # Median Filtresi: Konvolüsyonla çarpma yok, pikselleri sıralayıp medyan değerini elle buluyoruz. (cv2.medianBlur yasak!)
     k = int(kernel_size)
     if k < 1:
         k = 3
@@ -97,33 +66,17 @@ def _median_single(image: np.ndarray, kernel_size: int) -> np.ndarray:
     H, W = image.shape
     pad = kernel_size // 2
     padded = np.pad(image, pad, mode='reflect')
+    output = np.zeros((H, W), dtype=np.uint8)
     
-    """
-    # -------------------------------------------------------------
-    # İSTENEN İÇ İÇE MEDIAN DÖNGÜSÜ (Saf Python Matrisi)
-    # -------------------------------------------------------------
-    # for i in range(H):
-    #     for j in range(W):
-    #         window = padded[i:i+kernel_size, j:j+kernel_size].flatten()
-    #         output[i,j] = np.sort(window)[len(window)//2]
-    # -------------------------------------------------------------
-    """
-    
-    from numpy.lib.stride_tricks import sliding_window_view
-    
-    # Çekilen pencereler matrisi
-    windows = sliding_window_view(padded, window_shape=(kernel_size, kernel_size))
-    # Piksellerin sıralanabilmesi (np.sort) için penceredeki K*K'lık bölümü düzleştir (flatten yerine .reshape(-1))
-    windows_flat = windows.reshape(H, W, -1)
-    
-    # Seçilen penceredeki pikselleri küçükten büyüğe sırala (np.sort(window)):
-    sorted_windows = np.sort(windows_flat, axis=2)
-    
-    # Ortadaki elemanı al ( [len(window)//2] )
-    middle_idx = (kernel_size * kernel_size) // 2
-    output = sorted_windows[:, :, middle_idx]
-    
-    return output.astype(np.uint8)
+    # Elif: Median filtresini sıralama algoritmasıyla manuel yazdık, matris üzerinde kernel'i kaydırıp
+    # pikselleri küçükten büyüğe sıralayarak (sort) ortadaki medyan değeri seçiyoruz.
+    for i in range(H):
+        for j in range(W):
+            window = padded[i:i+kernel_size, j:j+kernel_size].flatten()
+            sorted_pixels = np.sort(window)
+            output[i, j] = sorted_pixels[len(sorted_pixels) // 2]
+            
+    return output
 
 def manuel_gaussian_kernel(sigma: float) -> np.ndarray:
     """Unsharp Masking (Keskinleştirme) işlevi için kullanılacak olan Gauss Çekirdeği Matematiği"""
@@ -142,10 +95,8 @@ def manuel_gaussian_kernel(sigma: float) -> np.ndarray:
     return g / g.sum()
 
 def unsharp_mask(image: np.ndarray, sigma: float = 1.0, strength: float = 1.5) -> np.ndarray:
-    """
-    Önce görüntüden blur çıkartılarak yüksek frekanslı(detay) kenarlar (mask) bulunur.
-    Daha sonra bu maske orijinale belli bir güce (strength) göre eklenir ve detay canlanır.
-    """
+    # Gülbanu: Önce manuel konvolüsyonla blur alıyoruz, orijinalden çıkarıp maskeyi (kenarları) buluyoruz.
+    # Sonra bu maskeyi orijinal resme ekleyerek keskinleştiriyoruz. Hazır sharpen fonksiyonu kullanmadık.
     
     # GUI (Arayüz) Uyumluluk Köprüsü: main.py parametre olarak tek slider (amount) yolladıysa,
     # bu 2. argüman olan sigma'ya yansır. İşin formülize kısmında amount(0.5 - 3.0) aslında `strength`'tir.

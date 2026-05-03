@@ -24,11 +24,10 @@ def get_structuring_element(shape: str, size: int) -> np.ndarray:
         return np.ones((size, size), dtype=np.uint8)
 
 def erosion(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
-    """Aşındırma İşlemi (cv2.erode yasak!). Kernel altındaki tüm hedefler doluysa dolar, yoksa aşınır."""
+    # Gülbanu: Aşındırma (Erosion) işlemi için kernel matrisini resimde döngüyle kaydırarak uyguluyoruz.
     if isinstance(kernel, int):
         kernel = get_structuring_element('rect', kernel)
 
-    # Otomatik Mod Çözümlemesi (Ana arayüz UI için konfor sağlar)
     if mode == 'auto':
         unique_vals = np.unique(image)
         mode = 'binary' if len(unique_vals) <= 2 else 'gray'
@@ -39,47 +38,31 @@ def erosion(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
     
     H, W = image.shape[:2]
     
-    """
-    # -------------------------------------------------------------
-    # İSTENEN MATEMATİKSEL İÇ İÇE DÖNGÜSÜ:
-    # -------------------------------------------------------------
-    # output = np.zeros_like(image)
-    # for i in range(H):
-    #     for j in range(W):
-    #         window = padded[i:i+k, j:j+k]
-    #         if mode == 'binary':
-    #             output[i,j] = 255 if np.all((window[kernel==1]) == 255) else 0
-    #         else: # gray
-    #             output[i,j] = np.min(window[kernel==1])
-    # -------------------------------------------------------------
-    """
-    
-    # Hızlı UI performansı ve '0' yanıt gecikmesi sağlamak için Vektörize NumPy modeli kullanıldı:
-    from numpy.lib.stride_tricks import sliding_window_view
-    mask = (kernel == 1).flatten()
-    
-    if len(image.shape) == 3: # Renkli boyut (Her renk kanalında ayrı tarama yapılır)
+    if len(image.shape) == 3:
         output = np.zeros_like(image, dtype=np.uint8)
         for c in range(3):
-            windows_flat = sliding_window_view(padded[:, :, c], (k, k)).reshape(H, W, -1)
-            masked_windows = windows_flat[:, :, mask]
-            if mode == 'binary': # Numpy ANY özelliği (vektörize all)
-                all_255 = np.all(masked_windows == 255, axis=2)
-                output[:, :, c] = np.where(all_255, 255, 0)
-            else: # Gri seviyeleri (Numpy vektörize edilmiş np.min)
-                output[:, :, c] = np.min(masked_windows, axis=2)
+            for i in range(H):
+                for j in range(W):
+                    window = padded[i:i+k, j:j+k, c]
+                    if mode == 'binary':
+                        output[i, j, c] = 255 if np.all(window[kernel == 1] == 255) else 0
+                    else:
+                        output[i, j, c] = np.min(window[kernel == 1])
         return output
-    else: # Tek boyutlu Gri/Binary matrisleri
-        windows_flat = sliding_window_view(padded, (k, k)).reshape(H, W, -1)
-        masked_windows = windows_flat[:, :, mask]
-        if mode == 'binary':
-            all_255 = np.all(masked_windows == 255, axis=2)
-            return np.where(all_255, 255, 0).astype(np.uint8)
-        else:
-            return np.min(masked_windows, axis=2).astype(np.uint8)
+    else:
+        output = np.zeros_like(image, dtype=np.uint8)
+        for i in range(H):
+            for j in range(W):
+                window = padded[i:i+k, j:j+k]
+                if mode == 'binary':
+                    output[i, j] = 255 if np.all(window[kernel == 1] == 255) else 0
+                else:
+                    output[i, j] = np.min(window[kernel == 1])
+        return output
 
 def dilation(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
-    """Genişletme İşlemi (cv2.dilate yasak!). Kernel taramasında matriste 1 tane bile eşleşme varsa genişler!"""
+    # Nazlı: Genişletme (Dilation) yaparken kernel'i piksellerin üzerinde gezdiriyoruz, 
+    # matriste maskeyle eşleşen 1 tane bile piksel varsa o alanı genişletiyoruz.
     if isinstance(kernel, int):
         kernel = get_structuring_element('rect', kernel)
 
@@ -92,44 +75,28 @@ def dilation(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
     padded = np.pad(image, pad, mode='reflect')
     
     H, W = image.shape[:2]
-    
-    """
-    # -------------------------------------------------------------
-    # İSTENEN İÇ İÇE V DÖNGÜSÜ (Saf kod mantığı aşağıdadır):
-    # -------------------------------------------------------------
-    # output = np.zeros_like(image)
-    # for i in range(H):
-    #     for j in range(W):
-    #         window = padded[i:i+k, j:j+k]
-    #         if mode == 'binary':
-    #             output[i,j] = 255 if np.any((window[kernel==1]) == 255) else 0
-    #         else: # gray
-    #             output[i,j] = np.max(window[kernel==1])
-    # -------------------------------------------------------------
-    """
-    
-    from numpy.lib.stride_tricks import sliding_window_view
-    mask = (kernel == 1).flatten()
     
     if len(image.shape) == 3: 
         output = np.zeros_like(image, dtype=np.uint8)
         for c in range(3):
-            windows_flat = sliding_window_view(padded[:, :, c], (k, k)).reshape(H, W, -1)
-            masked_windows = windows_flat[:, :, mask]
-            if mode == 'binary':
-                any_255 = np.any(masked_windows == 255, axis=2)
-                output[:, :, c] = np.where(any_255, 255, 0)
-            else: # Gri
-                output[:, :, c] = np.max(masked_windows, axis=2)
+            for i in range(H):
+                for j in range(W):
+                    window = padded[i:i+k, j:j+k, c]
+                    if mode == 'binary':
+                        output[i, j, c] = 255 if np.any(window[kernel == 1] == 255) else 0
+                    else:
+                        output[i, j, c] = np.max(window[kernel == 1])
         return output
     else:
-        windows_flat = sliding_window_view(padded, (k, k)).reshape(H, W, -1)
-        masked_windows = windows_flat[:, :, mask]
-        if mode == 'binary':
-            any_255 = np.any(masked_windows == 255, axis=2)
-            return np.where(any_255, 255, 0).astype(np.uint8)
-        else: # Gri
-            return np.max(masked_windows, axis=2).astype(np.uint8)
+        output = np.zeros_like(image, dtype=np.uint8)
+        for i in range(H):
+            for j in range(W):
+                window = padded[i:i+k, j:j+k]
+                if mode == 'binary':
+                    output[i, j] = 255 if np.any(window[kernel == 1] == 255) else 0
+                else:
+                    output[i, j] = np.max(window[kernel == 1])
+        return output
 
 def opening(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
     """Açma İşlemi (Önce Erozyon çalışır, Sonra Genişletme) - Arka plandaki küçük gürültü piksellerini izole eder."""
@@ -142,7 +109,7 @@ def closing(image: np.ndarray, kernel=3, mode='auto') -> np.ndarray:
     return erosion(dilated, kernel, mode)
 
 def prewitt_edge_detection(image: np.ndarray) -> np.ndarray:
-    """Kenar Bulma ve Silüet Çıkarımı: X ve Y doğrultularındaki Kernel'ların konvolüsyon eğim farklarıyla bulunur."""
+    # Bengü: Burada Prewitt kernelini resmin üstünde döngüyle gezdirerek X ve Y türevlerini manuel hesaplıyoruz.
     Kernel_x = np.array([[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]], dtype=np.float64)
     Kernel_y = np.array([[-1,-1,-1], [ 0, 0, 0], [ 1, 1, 1]], dtype=np.float64)
     

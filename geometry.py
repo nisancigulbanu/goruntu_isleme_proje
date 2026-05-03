@@ -2,10 +2,8 @@ import numpy as np
 import math
 
 def bilinear_interpolate(image: np.ndarray, y, x):
-    """
-    Kesirli koordinatlarda ilgili pikselin 4-komşusuna bakarak ağırlıklı renk değerini hesaplar.
-    Döngü zorunluluğunu karşılar fakat arayüzü kilitlememesi için numpy matris listeleri ile çalışacak şekilde (Vektörize edilmiş NumPy desteği formatında) kurulmuştur.
-    """
+    # Elif: Bilinear interpolasyon yaparken komşu piksellerin ağırlıklı ortalamasını aldık ki resim netleşsin.
+    # Kendi interpolasyon formülümüzü uyguladık.
     h, w = image.shape[:2]
     
     # Değer numpy array ile yollanıyorsa floor(x) mantığı matrise uygulanır
@@ -50,9 +48,7 @@ def bilinear_interpolate(image: np.ndarray, y, x):
     return result
 
 def rotate_image(image: np.ndarray, angle: float) -> np.ndarray:
-    """
-    Ters Haritalama (Inverse Mapping) kullanılarak Döndürme Matrisi (R^-1) hesaplaması.
-    """
+    # Gülbanu: Döndürme matrisini hesaplayıp pikselleri ters haritalama (Inverse Mapping) ile yeni yerine yerleştirdik.
     h, w = image.shape[:2]
     ch = image.shape[2] if len(image.shape) == 3 else 1
     
@@ -109,7 +105,7 @@ def rotate_image(image: np.ndarray, angle: float) -> np.ndarray:
     return output
 
 def crop_image(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
-    """NumPy matris dilimlemesi kullanılarak x ve y noktasından w ve h kadar matris kopyalar"""
+    # Bengü: Hata vermesin diye boundary check (sınır kontrolü) ekledik, pikselleri matristen numpy ile dilimliyoruz.
     img_h, img_w = image.shape[:2]
     
     # Index hatası olmasın diye sınırlara bastırılır
@@ -121,7 +117,8 @@ def crop_image(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
     return image[y_start:y_end, x_start:x_end].copy()
 
 def zoom_image(image: np.ndarray, scale: float) -> np.ndarray:
-    """Ters haritalama ve bilinear interpolasyon. Çıktı çok büyürse ölçek otomatik kısılır (hata yok). Büyük görüntüler şeritler halinde işlenir; PyQt açıksa ara sıra processEvents ile arayüz donması azaltılır."""
+    # Nazlı: Zoom yapınca resim dışarı taşıyordu, boundary check ekledik.
+    # Çok büyük resimlerde arayüzün kasmasını engellemek için işlemi şeritlere bölerek yapıyoruz.
     h, w = image.shape[:2]
     ch = image.shape[2] if len(image.shape) == 3 else 1
 

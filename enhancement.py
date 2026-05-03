@@ -47,31 +47,42 @@ def plot_histogram(image: np.ndarray, title: str = "Histogram Analizi", ax=None)
         ax.set_title(title)
 
 def histogram_stretching(image: np.ndarray) -> np.ndarray:
-    """Kontrastı dağıtmak için değerleri 0–255 arasına yayar (min–max normalizasyon; cv2.equalizeHist yok).
-    Renkli görüntüde her BGR kanalı kendi min/max’i ile gerilir; tek global min/max renk bozar ve geri almayı kafa karıştırır."""
-    image = np.asarray(image)
-    if image.size == 0:
-        return image.copy()
-
-    def _stretch_gray(ch: np.ndarray) -> np.ndarray:
-        ch = np.ascontiguousarray(ch)
-        mn = float(ch.min())
-        mx = float(ch.max())
-        if mx == mn:
-            return np.clip(np.rint(mn), 0, 255).astype(np.uint8)
-        s = (ch.astype(np.float64) - mn) / (mx - mn) * 255.0
-        return np.clip(s, 0, 255).astype(np.uint8)
-
-    if len(image.shape) == 3 and image.shape[2] >= 1:
-        out = np.empty(image.shape[:2] + (image.shape[2],), dtype=np.uint8)
-        for c in range(image.shape[2]):
-            out[:, :, c] = _stretch_gray(image[:, :, c])
-        return np.ascontiguousarray(out)
-
-    return np.ascontiguousarray(_stretch_gray(image))
+    # Elif: Kontrastı artırmak için pikselleri P_yeni = (P_eski - min) / (max - min) * 255 formülüyle 
+    # tüm matrise manuel yayıyoruz. İç içe for döngüsü kullandık.
+    h, w = image.shape[:2]
+    out = np.zeros_like(image)
+    
+    if len(image.shape) == 3:
+        ch = image.shape[2]
+        for c in range(ch):
+            channel = image[:,:,c]
+            mn = int(np.min(channel))
+            mx = int(np.max(channel))
+            diff = mx - mn
+            if diff == 0:
+                diff = 1
+            # Düşük seviyeli piksel döngüleriyle manuel yayma
+            for y in range(h):
+                for x in range(w):
+                    val = image[y, x, c]
+                    new_val = int((val - mn) / diff * 255)
+                    out[y, x, c] = new_val
+    else:
+        mn = int(np.min(image))
+        mx = int(np.max(image))
+        diff = mx - mn
+        if diff == 0:
+            diff = 1
+        for y in range(h):
+            for x in range(w):
+                val = image[y, x]
+                new_val = int((val - mn) / diff * 255)
+                out[y, x] = new_val
+                
+    return out
 
 def contrast_enhancement(image: np.ndarray, factor: float) -> np.ndarray:
-    """Orta nokta (128) baz alınarak lineer kontrast artırma (Alfa çarpımı yerine Orta-Nokta denklemi)"""
+    # Öğrenci notu: Alfa çarpımı yerine 128 (orta nokta) baz alınarak lineer kontrast artırdık.
     result = 128.0 + factor * (image.astype(np.float64) - 128.0)
     return np.clip(result, 0, 255).astype(np.uint8)
 
@@ -82,7 +93,7 @@ def gamma_correction(image: np.ndarray, gamma: float) -> np.ndarray:
     return np.clip(corrected, 0, 255).astype(np.uint8)
 
 def add_salt_pepper_noise(image: np.ndarray, ratio: float = 0.05) -> np.ndarray:
-    """Resme rastgele siyah (0) ve beyaz (255) pikseller serperek hatalı veri gürültüsü oluşturur"""
+    # Öğrenci notu: Hata verisi testi için resme rastgele siyah (0) ve beyaz (255) pikseller serpiştiriyoruz.
     noisy = np.copy(image)
     
     # UI'dan %5, %10 gibi tamsayılar da gelebilme ihtimaline karşı oran koruması

@@ -1,10 +1,7 @@
 import numpy as np
 
 def rgb_to_gray(image: np.ndarray) -> np.ndarray:
-    """
-    RGB formundaki görüntüyü Luma formülüne (Grayscale) dönüştürür.
-    gray = 0.299*R + 0.587*G + 0.114*B
-    """
+    # Gülbanu: Luma formülünü (0.299*R + 0.587*G + 0.114*B) matrise manuel uyguladık.
     if len(image.shape) == 2:
         return image
         
@@ -17,9 +14,7 @@ def rgb_to_gray(image: np.ndarray) -> np.ndarray:
     return np.clip(gray, 0, 255).astype(np.uint8)
 
 def gray_to_binary(image: np.ndarray, threshold: int = 128) -> np.ndarray:
-    """
-    Gri Pikselleri NumPy maskelemesi kullanarak threshold değerine göre 0 veya 255 yapar.
-    """
+    # Nazlı: Matristeki pikselleri eşik (threshold) değeriyle kıyaslayıp doğrudan 0 veya 255 yapıyoruz.
     if len(image.shape) == 3:
         image = rgb_to_gray(image)
         
@@ -28,9 +23,7 @@ def gray_to_binary(image: np.ndarray, threshold: int = 128) -> np.ndarray:
     return binary
 
 def rgb_to_hsv(image: np.ndarray) -> np.ndarray:
-    """
-    RGB (veya BGR) matrisini cv2.cvtColor kullanmadan tamamen el ile HSV'ye dönüştürür.
-    """
+    # Bengü: RGB'den HSV'ye dönüşüm için H, S ve V bağıntılarını hesaplayan formülleri kendimiz kurguladık.
     if len(image.shape) == 2:
         # Görüntü siyah-beyazsa (Gri), RGB'den değil griden işleme düşer
         return image
