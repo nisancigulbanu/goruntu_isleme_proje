@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QTabWidget, QSlider, QSpinBox,
     QMessageBox, QFileDialog, QToolBar, QAction, QListWidget,
     QComboBox, QGroupBox, QSizePolicy, QDialog, QCheckBox, QDoubleSpinBox,
-    QFrame, QShortcut, QSplitter, QScrollArea, QAbstractScrollArea,
+    QFrame, QShortcut, QSplitter, QScrollArea, QAbstractScrollArea, QGridLayout,
 )
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -149,6 +149,43 @@ QToolButton {{
     padding: {px(8)}px {px(12)}px;
     min-height: {px(24)}px;
 }}
+QFrame#controlCard {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #232738, stop:1 #1b1f2c);
+    border: 1px solid #343b52;
+    border-radius: {px(18)}px;
+}}
+QLabel#cardTitle {{
+    font-size: {px(18)}px;
+    font-weight: 700;
+    color: #f5f7ff;
+}}
+QLabel#cardDescription {{
+    font-size: {px(13)}px;
+    color: #9ca6bf;
+}}
+QLabel#fieldLabel {{
+    font-size: {px(13)}px;
+    color: #aeb7cd;
+    font-weight: 600;
+}}
+QLabel#valueBadge {{
+    background: #141925;
+    border: 1px solid #3a4766;
+    border-radius: {px(12)}px;
+    padding: {px(6)}px {px(10)}px;
+    color: #f4f7ff;
+    font-size: {px(13)}px;
+    font-weight: 700;
+    min-width: {px(52)}px;
+}}
+QPushButton#primaryButton {{
+    background: #5d8cff;
+    border: 1px solid #80a6ff;
+    color: #ffffff;
+}}
+QPushButton#primaryButton:hover {{ background: #74a0ff; border-color: #9abbff; }}
+QScrollArea#tabScroll {{ border: none; background: transparent; }}
+QWidget#tabContent {{ background: transparent; }}
 QScrollBar:vertical {{ background: #151721; width: {px(12)}px; }}
 QScrollBar::handle:vertical {{ background: #3d455c; border-radius: {px(6)}px; min-height: {px(28)}px; }}
 """
@@ -445,7 +482,7 @@ class MainWindow(QMainWindow):
         ab.triggered.connect(self.batch_process)
         tb.addAction(ab)
 
-    def setup_tabs(self):
+    def _setup_tabs_legacy(self):
         t1 = QWidget()
         t1.setObjectName("tabPage")
         t1.setAttribute(Qt.WA_StyledBackground, True)
@@ -771,6 +808,451 @@ class MainWindow(QMainWindow):
         r5.addWidget(ge, 1)
         r5.addWidget(gmo, 2)
         l5.addLayout(r5)
+        self.tabs.addTab(t5, "Analiz & Morfoloji")
+
+    def _tab_page_layout(self):
+        page = QWidget()
+        page.setObjectName("tabPage")
+        page.setAttribute(Qt.WA_StyledBackground, True)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setObjectName("tabScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        content = QWidget()
+        content.setObjectName("tabContent")
+        content_layout = QGridLayout(content)
+        content_layout.setContentsMargins(14, 14, 14, 14)
+        content_layout.setHorizontalSpacing(16)
+        content_layout.setVerticalSpacing(16)
+        content_layout.setColumnStretch(0, 1)
+        content_layout.setColumnStretch(1, 1)
+
+        scroll.setWidget(content)
+        page_layout.addWidget(scroll)
+        return page, content_layout
+
+    def _card_label(self, text, object_name):
+        label = QLabel(text)
+        label.setObjectName(object_name)
+        label.setWordWrap(True)
+        return label
+
+    def _value_badge(self, text):
+        label = QLabel(text)
+        label.setObjectName("valueBadge")
+        label.setAlignment(Qt.AlignCenter)
+        return label
+
+    def _primary_button(self, text, callback):
+        button = QPushButton(text)
+        button.setObjectName("primaryButton")
+        button.clicked.connect(callback)
+        return button
+
+    def _build_control_card(self, title, description, body_layout, action_button=None):
+        card = QFrame()
+        card.setObjectName("controlCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(14)
+        layout.addWidget(self._card_label(title, "cardTitle"))
+        layout.addWidget(self._card_label(description, "cardDescription"))
+        layout.addLayout(body_layout)
+        layout.addStretch(1)
+        if action_button is not None:
+            layout.addWidget(action_button)
+        return card
+
+    def setup_tabs(self):
+        self.tabs.clear()
+
+        t1, grid1 = self._tab_page_layout()
+        card_gray = self._build_control_card(
+            "Gri Dönüşüm",
+            "Renkli görüntüyü tek kanallı gri tona çevirir ve sonraki işlemler için sade bir başlangıç sunar.",
+            QVBoxLayout(),
+            self._primary_button(
+                "Gri Dönüşüm Uygula",
+                lambda: self.apply_operation("Gri Dönüşüm", preprocessing.rgb_to_gray),
+            ),
+        )
+        self.slider_binary = QSlider(Qt.Horizontal)
+        self.slider_binary.setRange(0, 255)
+        self.slider_binary.setValue(128)
+        self.label_binary_val = self._value_badge("128")
+        self.slider_binary.valueChanged.connect(lambda v: self.label_binary_val.setText(str(v)))
+        v2 = QVBoxLayout()
+        v2.setSpacing(10)
+        v2.addWidget(self._card_label("Eşik Değeri", "fieldLabel"))
+        row_binary = QHBoxLayout()
+        row_binary.setSpacing(10)
+        row_binary.addWidget(self.slider_binary, 1)
+        row_binary.addWidget(self.label_binary_val)
+        v2.addLayout(row_binary)
+        card_binary = self._build_control_card(
+            "Binary Dönüşüm",
+            "Parlaklık eşiğine göre görüntüyü siyah ve beyaz katmanlara ayırır.",
+            v2,
+            self._primary_button(
+                "Binary Dönüşüm Uygula",
+                lambda: self.apply_operation(
+                    f"Binary (T:{self.slider_binary.value()})",
+                    preprocessing.gray_to_binary,
+                    self.slider_binary.value(),
+                ),
+            ),
+        )
+        card_hsv = self._build_control_card(
+            "HSV Dönüşüm",
+            "Renk tonu, doygunluk ve parlaklığı ayrı katmanlarda incelemek için uygundur.",
+            QVBoxLayout(),
+            self._primary_button(
+                "HSV Dönüşüm Uygula",
+                lambda: self.apply_operation("HSV", preprocessing.rgb_to_hsv),
+            ),
+        )
+        grid1.addWidget(card_gray, 0, 0)
+        grid1.addWidget(card_binary, 0, 1)
+        grid1.addWidget(card_hsv, 1, 0, 1, 2)
+        self.tabs.addTab(t1, "Ön İşleme")
+
+        t2, grid2 = self._tab_page_layout()
+        self.spin_angle = QSpinBox()
+        self.spin_angle.setRange(-180, 180)
+        self.spin_angle.setValue(45)
+        rotate_body = QVBoxLayout()
+        rotate_body.setSpacing(10)
+        rotate_body.addWidget(self._card_label("Açı", "fieldLabel"))
+        rotate_body.addWidget(self.spin_angle)
+        card_rotate = self._build_control_card(
+            "Döndürme",
+            "Belgeyi ya da fotoğrafı doğru eksene hizalamak için kontrollü döndürme uygular.",
+            rotate_body,
+            self._primary_button(
+                "Döndür",
+                lambda: self.apply_operation(
+                    f"Döndürme ({self.spin_angle.value()}°)",
+                    geometry.rotate_image,
+                    float(self.spin_angle.value()),
+                ),
+            ),
+        )
+
+        self.spin_x = QSpinBox()
+        self.spin_x.setRange(0, 9999)
+        self.spin_y = QSpinBox()
+        self.spin_y.setRange(0, 9999)
+        self.spin_w = QSpinBox()
+        self.spin_w.setRange(1, 9999)
+        self.spin_w.setValue(200)
+        self.spin_h = QSpinBox()
+        self.spin_h.setRange(1, 9999)
+        self.spin_h.setValue(200)
+        crop_body = QGridLayout()
+        crop_body.setHorizontalSpacing(12)
+        crop_body.setVerticalSpacing(10)
+        crop_body.addWidget(self._card_label("X", "fieldLabel"), 0, 0)
+        crop_body.addWidget(self.spin_x, 0, 1)
+        crop_body.addWidget(self._card_label("Y", "fieldLabel"), 0, 2)
+        crop_body.addWidget(self.spin_y, 0, 3)
+        crop_body.addWidget(self._card_label("Genişlik", "fieldLabel"), 1, 0)
+        crop_body.addWidget(self.spin_w, 1, 1)
+        crop_body.addWidget(self._card_label("Yükseklik", "fieldLabel"), 1, 2)
+        crop_body.addWidget(self.spin_h, 1, 3)
+        card_crop = self._build_control_card(
+            "Kırpma",
+            "Sadece ihtiyaç duyulan bölgeye odaklanmak için kırpma alanını rahatça ayarla.",
+            crop_body,
+            self._primary_button(
+                "Kırp",
+                lambda: self.apply_operation(
+                    "Kırpma",
+                    geometry.crop_image,
+                    self.spin_x.value(),
+                    self.spin_y.value(),
+                    self.spin_w.value(),
+                    self.spin_h.value(),
+                ),
+            ),
+        )
+
+        self.slider_zoom = QSlider(Qt.Horizontal)
+        self.slider_zoom.setRange(1, 40)
+        self.slider_zoom.setValue(10)
+        self.label_zoom = self._value_badge("1.0x")
+        self.slider_zoom.valueChanged.connect(lambda v: self.label_zoom.setText(f"{v/10.0}x"))
+        zoom_body = QVBoxLayout()
+        zoom_body.setSpacing(10)
+        zoom_body.addWidget(self._card_label("Yakınlaştırma Oranı", "fieldLabel"))
+        row_zoom = QHBoxLayout()
+        row_zoom.setSpacing(10)
+        row_zoom.addWidget(self.slider_zoom, 1)
+        row_zoom.addWidget(self.label_zoom)
+        zoom_body.addLayout(row_zoom)
+        card_zoom = self._build_control_card(
+            "Zoom",
+            "Detayları daha yakından incelemek veya görüntü ölçeğini değiştirmek için kullan.",
+            zoom_body,
+            self._primary_button(
+                "Zoom Uygula",
+                lambda: self.apply_operation(
+                    f"Zoom ({self.slider_zoom.value()/10.0}x)",
+                    geometry.zoom_image,
+                    self.slider_zoom.value() / 10.0,
+                ),
+            ),
+        )
+        grid2.addWidget(card_rotate, 0, 0)
+        grid2.addWidget(card_crop, 0, 1)
+        grid2.addWidget(card_zoom, 1, 0, 1, 2)
+        self.tabs.addTab(t2, "Geometrik Düzeltme")
+
+        t3, grid3 = self._tab_page_layout()
+        hist_body = QVBoxLayout()
+        hist_body.setSpacing(10)
+        hist_actions = QHBoxLayout()
+        hist_actions.setSpacing(10)
+        hist_actions.addWidget(self._primary_button("Histogram Analizini Göster", self.show_histogram_dialog))
+        hist_actions.addWidget(self._primary_button("Histogram Germe", self._apply_histogram_stretch))
+        hist_body.addLayout(hist_actions)
+        card_hist = self._build_control_card(
+            "Histogram Araçları",
+            "Parlaklık dağılımını inceleyip ton aralığını daha dengeli hale getirmek için kullan.",
+            hist_body,
+        )
+
+        self.slider_cont = QSlider(Qt.Horizontal)
+        self.slider_cont.setRange(1, 30)
+        self.slider_cont.setValue(10)
+        self.label_cont = self._value_badge("1.0x")
+        self.slider_cont.valueChanged.connect(lambda v: self.label_cont.setText(f"{v/10.0}x"))
+        self.slider_gamma = QSlider(Qt.Horizontal)
+        self.slider_gamma.setRange(1, 50)
+        self.slider_gamma.setValue(10)
+        self.label_gamma = self._value_badge("γ=1.0")
+        self.slider_gamma.valueChanged.connect(lambda v: self.label_gamma.setText(f"γ={v/10.0:.1f}"))
+        tone_body = QVBoxLayout()
+        tone_body.setSpacing(12)
+        tone_body.addWidget(self._card_label("Kontrast", "fieldLabel"))
+        row_cont = QHBoxLayout()
+        row_cont.setSpacing(10)
+        row_cont.addWidget(self.slider_cont, 1)
+        row_cont.addWidget(self.label_cont)
+        tone_body.addLayout(row_cont)
+        tone_body.addWidget(self._card_label("Gamma", "fieldLabel"))
+        row_gamma = QHBoxLayout()
+        row_gamma.setSpacing(10)
+        row_gamma.addWidget(self.slider_gamma, 1)
+        row_gamma.addWidget(self.label_gamma)
+        tone_body.addLayout(row_gamma)
+        tone_actions = QHBoxLayout()
+        tone_actions.setSpacing(10)
+        tone_actions.addWidget(
+            self._primary_button(
+                "Kontrast Artır",
+                lambda: self.apply_operation(
+                    f"Kontrast ({self.slider_cont.value()/10.0}x)",
+                    enhancement.contrast_enhancement,
+                    self.slider_cont.value() / 10.0,
+                ),
+            )
+        )
+        tone_actions.addWidget(
+            self._primary_button(
+                "Gamma Uygula",
+                lambda: self.apply_operation(
+                    f"Gamma ({self.slider_gamma.value()/10.0:.1f})",
+                    enhancement.gamma_correction,
+                    self.slider_gamma.value() / 10.0,
+                ),
+            )
+        )
+        tone_body.addLayout(tone_actions)
+        card_tone = self._build_control_card(
+            "Kontrast ve Gamma",
+            "Soluk ya da düşük kontrastlı içerikleri daha okunur hale getirmek için ton ayarı yap.",
+            tone_body,
+        )
+
+        self.slider_sp = QSlider(Qt.Horizontal)
+        self.slider_sp.setRange(1, 100)
+        self.slider_sp.setValue(5)
+        self.label_sp = self._value_badge("%5")
+        self.slider_sp.valueChanged.connect(lambda v: self.label_sp.setText(f"%{v}"))
+        noise_body = QVBoxLayout()
+        noise_body.setSpacing(10)
+        noise_body.addWidget(self._card_label("Gürültü Oranı", "fieldLabel"))
+        row_noise = QHBoxLayout()
+        row_noise.setSpacing(10)
+        row_noise.addWidget(self.slider_sp, 1)
+        row_noise.addWidget(self.label_sp)
+        noise_body.addLayout(row_noise)
+        card_noise = self._build_control_card(
+            "Tuz ve Biber Gürültüsü",
+            "Filtre etkilerini test etmek veya örnek bozulmalar üretmek için kontrollü gürültü ekler.",
+            noise_body,
+            self._primary_button(
+                "Gürültü Ekle",
+                lambda: self.apply_operation(
+                    f"Tuz/Biber ({self.slider_sp.value()}%)",
+                    enhancement.add_salt_pepper_noise,
+                    float(self.slider_sp.value()),
+                ),
+            ),
+        )
+
+        pair_body = QVBoxLayout()
+        pair_body.setSpacing(10)
+        pair_top = QHBoxLayout()
+        pair_top.setSpacing(10)
+        pair_top.addWidget(self._primary_button("Ortalama (2. dosya)", self.do_image_averaging))
+        pair_top.addWidget(self._primary_button("Ekleme", self.do_image_addition))
+        pair_body.addLayout(pair_top)
+        pair_body.addWidget(self._primary_button("Bölme", self.do_image_division))
+        card_pair = self._build_control_card(
+            "İki Görüntü İşlemleri",
+            "İkinci bir dosya ile karşılaştırma, ekleme ve oranlama işlemlerini daha rahat yap.",
+            pair_body,
+        )
+        grid3.addWidget(card_hist, 0, 0)
+        grid3.addWidget(card_tone, 0, 1)
+        grid3.addWidget(card_noise, 1, 0)
+        grid3.addWidget(card_pair, 1, 1)
+        self.tabs.addTab(t3, "İyileştirme")
+
+        t4, grid4 = self._tab_page_layout()
+        self.spin_mean_k = QSpinBox()
+        self.spin_mean_k.setRange(3, 15)
+        self.spin_mean_k.setSingleStep(2)
+        self.spin_mean_k.setValue(3)
+        mean_body = QVBoxLayout()
+        mean_body.setSpacing(10)
+        mean_body.addWidget(self._card_label("Kernel Boyutu", "fieldLabel"))
+        mean_body.addWidget(self.spin_mean_k)
+        card_mean = self._build_control_card(
+            "Mean Filtresi",
+            "Genel gürültüyü azaltarak geçişleri daha yumuşak ve dengeli hale getirir.",
+            mean_body,
+            self._primary_button(
+                "Mean Uygula",
+                lambda: self.apply_operation("Mean", filtering.mean_filter, self.spin_mean_k.value()),
+            ),
+        )
+
+        self.combo_median_main = QComboBox()
+        self.combo_median_main.addItems(["3", "5", "7", "9"])
+        median_body = QVBoxLayout()
+        median_body.setSpacing(10)
+        median_body.addWidget(self._card_label("Kernel Boyutu", "fieldLabel"))
+        median_body.addWidget(self.combo_median_main)
+        card_median = self._build_control_card(
+            "Median Filtresi",
+            "Özellikle tuz-biber gürültüsünü azaltırken kenar detaylarını daha iyi korur.",
+            median_body,
+            self._primary_button(
+                "Median Uygula",
+                lambda: self.apply_operation(
+                    "Median",
+                    filtering.median_filter,
+                    int(self.combo_median_main.currentText()),
+                ),
+            ),
+        )
+
+        self.spin_gauss_sigma = QDoubleSpinBox()
+        self.spin_gauss_sigma.setRange(0.5, 4.0)
+        self.spin_gauss_sigma.setValue(1.0)
+        gaussian_body = QVBoxLayout()
+        gaussian_body.setSpacing(10)
+        gaussian_body.addWidget(self._card_label("Sigma Değeri", "fieldLabel"))
+        gaussian_body.addWidget(self.spin_gauss_sigma)
+        card_gaussian = self._build_control_card(
+            "Gaussian Blur",
+            "Doğal bir yumuşatma uygular ve sert ton geçişlerini daha dengeli hale getirir.",
+            gaussian_body,
+            self._primary_button(
+                "Gaussian Uygula",
+                lambda: self.apply_operation("Gaussian", gaussian_blur_sigma, self.spin_gauss_sigma.value()),
+            ),
+        )
+
+        self.spin_unsharp_main = QDoubleSpinBox()
+        self.spin_unsharp_main.setRange(0.1, 5.0)
+        self.spin_unsharp_main.setValue(1.5)
+        unsharp_body = QVBoxLayout()
+        unsharp_body.setSpacing(10)
+        unsharp_body.addWidget(self._card_label("Keskinleştirme Miktarı", "fieldLabel"))
+        unsharp_body.addWidget(self.spin_unsharp_main)
+        card_unsharp = self._build_control_card(
+            "Unsharp Mask",
+            "Belgedeki detayları belirginleştirir ve hafif bulanıklıkları toparlar.",
+            unsharp_body,
+            self._primary_button(
+                "Unsharp Uygula",
+                lambda: self.apply_operation("Unsharp", filtering.unsharp_mask, self.spin_unsharp_main.value()),
+            ),
+        )
+        grid4.addWidget(card_mean, 0, 0)
+        grid4.addWidget(card_median, 0, 1)
+        grid4.addWidget(card_gaussian, 1, 0)
+        grid4.addWidget(card_unsharp, 1, 1)
+        self.tabs.addTab(t4, "Filtreleme")
+
+        t5, grid5 = self._tab_page_layout()
+        card_edge = self._build_control_card(
+            "Prewitt Kenar Analizi",
+            "Belgedeki ana hatları ve şekil sınırlarını net biçimde ortaya çıkarır.",
+            QVBoxLayout(),
+            self._primary_button(
+                "Prewitt Uygula",
+                lambda: self.apply_operation("Prewitt", analysis.prewitt_edge_detection),
+            ),
+        )
+        self.combo_morph_shape = QComboBox()
+        self.combo_morph_shape.addItems(["rect", "cross", "ellipse"])
+        self.combo_morph = QComboBox()
+        for s in (3, 5, 7, 9):
+            self.combo_morph.addItem(str(s))
+        morph_body = QVBoxLayout()
+        morph_body.setSpacing(12)
+        hm = QGridLayout()
+        hm.setHorizontalSpacing(12)
+        hm.setVerticalSpacing(10)
+        hm.addWidget(self._card_label("Şekil", "fieldLabel"), 0, 0)
+        hm.addWidget(self.combo_morph_shape, 0, 1)
+        hm.addWidget(self._card_label("Boyut", "fieldLabel"), 0, 2)
+        hm.addWidget(self.combo_morph, 0, 3)
+        morph_body.addLayout(hm)
+        h2 = QGridLayout()
+        h2.setHorizontalSpacing(10)
+        h2.setVerticalSpacing(10)
+        button_index = 0
+        for txt, fn in (
+            ("Erozyon", analysis.erosion),
+            ("Dilation", analysis.dilation),
+            ("Opening", analysis.opening),
+            ("Closing", analysis.closing),
+        ):
+            b = self._primary_button(
+                txt,
+                lambda checked=False, f=fn, name=txt: self.apply_operation(
+                    name, f, self._morph_structuring_element(), "auto"
+                ),
+            )
+            h2.addWidget(b, button_index // 2, button_index % 2)
+            button_index += 1
+        morph_body.addLayout(h2)
+        card_morph = self._build_control_card(
+            "Morfoloji Araçları",
+            "Küçük bozulmaları temizlemek ve yapısal formları güçlendirmek için temel morfolojik işlemleri sunar.",
+            morph_body,
+        )
+        grid5.addWidget(card_edge, 0, 0)
+        grid5.addWidget(card_morph, 0, 1)
         self.tabs.addTab(t5, "Analiz & Morfoloji")
 
     def show_histogram_dialog(self):
