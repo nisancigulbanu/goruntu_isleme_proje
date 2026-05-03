@@ -68,6 +68,92 @@ def gaussian_blur_sigma(image, sigma):
     return filtering.convolve2d(image, filtering.manuel_gaussian_kernel(float(sigma)))
 
 
+def build_modern_style(scale=1.0):
+    def px(value):
+        return max(1, int(round(value * scale)))
+
+    return f"""
+QMainWindow, QDialog {{ background-color: #14151c; }}
+QWidget {{ color: #ececf3; font-family: 'Segoe UI', sans-serif; font-size: {px(14)}px; }}
+QLabel {{ color: #dce0eb; }}
+QLabel#panelMeta {{ padding: {px(12)}px {px(14)}px; background: #1e2030; border: 1px solid #2e3348; border-radius: {px(12)}px; }}
+QLabel#panelImage {{ border: 1px dashed #3d4a63; border-radius: {px(14)}px; background: #1a1c28; padding: {px(10)}px; }}
+QGroupBox#historyCard {{ border: 1px solid #2e3348; border-radius: {px(14)}px; margin-top: {px(10)}px; padding: {px(12)}px; background: #1e2030; }}
+QWidget#tabPage {{ background: #181a26; }}
+QGroupBox {{
+    border: 1px solid #323848;
+    border-radius: {px(12)}px;
+    margin-top: {px(14)}px;
+    padding: {px(16)}px {px(12)}px {px(12)}px {px(12)}px;
+    background: #222534;
+    font-size: {px(15)}px;
+    font-weight: 600;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: {px(12)}px;
+    padding: 0 {px(4)}px;
+}}
+QPushButton {{
+    background: #2a3145;
+    border: 1px solid #3d4660;
+    border-radius: {px(10)}px;
+    padding: {px(10)}px {px(16)}px;
+    min-height: {px(22)}px;
+    color: #f4f6fb;
+    font-size: {px(14)}px;
+    font-weight: 600;
+}}
+QPushButton:hover {{ background: #343d56; border-color: #5d8cff; }}
+QTabWidget::pane {{ border: 1px solid #2e3348; border-radius: {px(12)}px; background: #181a26; padding: {px(8)}px; }}
+QTabBar::tab {{
+    background: #1e2230;
+    color: #8b92a8;
+    padding: {px(12)}px {px(20)}px;
+    min-width: {px(130)}px;
+    border-top-left-radius: {px(10)}px;
+    border-top-right-radius: {px(10)}px;
+    font-size: {px(15)}px;
+    font-weight: 600;
+}}
+QTabBar::tab:selected {{ background: #181a26; color: #fff; font-weight: 700; border-bottom: 3px solid #5d8cff; }}
+QSlider::groove:horizontal {{ height: {px(8)}px; background: #12141d; border-radius: {px(4)}px; }}
+QSlider::handle:horizontal {{
+    background: #e8ebf4;
+    border: 1px solid #5d8cff;
+    width: {px(18)}px;
+    height: {px(18)}px;
+    margin: -{px(6)}px 0;
+    border-radius: {px(9)}px;
+}}
+QListWidget {{
+    background: #151721;
+    border: 1px solid #2e3348;
+    border-radius: {px(12)}px;
+    font-size: {px(14)}px;
+    padding: {px(4)}px;
+}}
+QListWidget::item {{ padding: {px(6)}px {px(8)}px; }}
+QSpinBox, QDoubleSpinBox, QComboBox {{
+    background: #222534;
+    border: 1px solid #3d4660;
+    border-radius: {px(8)}px;
+    padding: {px(8)}px {px(10)}px;
+    min-height: {px(22)}px;
+    color: #ececf3;
+    font-size: {px(14)}px;
+}}
+QToolBar {{ background: #1a1c28; border-bottom: 1px solid #2e3348; padding: {px(10)}px; spacing: {px(8)}px; }}
+QToolButton {{
+    font-size: {px(14)}px;
+    padding: {px(8)}px {px(12)}px;
+    min-height: {px(24)}px;
+}}
+QScrollBar:vertical {{ background: #151721; width: {px(12)}px; }}
+QScrollBar::handle:vertical {{ background: #3d455c; border-radius: {px(6)}px; min-height: {px(28)}px; }}
+"""
+
+
 class BatchProcessDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -182,6 +268,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Dijital Arşivci - Tarihi Belge ve Fotoğraf Restorasyonu")
         self.resize(1150, 820)
         self.setMinimumSize(860, 620)
+        self._ui_scale = 1.0
         self.original_image = None
         self.current_image = None
         self.image_path = None
@@ -194,19 +281,70 @@ class MainWindow(QMainWindow):
         _qs.setContext(Qt.WindowShortcut)
         _qs.activated.connect(self.close)
 
+    def _calc_ui_scale(self):
+        width_scale = self.width() / 1280.0
+        height_scale = self.height() / 860.0
+        return min(1.45, max(1.0, min(width_scale, height_scale)))
+
+    def _scale_px(self, value):
+        return max(1, int(round(value * self._ui_scale)))
+
+    def _panel_placeholder_html(self, title, subtitle):
+        title_size = self._scale_px(18)
+        subtitle_size = self._scale_px(14)
+        return (
+            f"<div align='center'><span style='font-size:{title_size}px;font-weight:600;color:#9aa3b8'>"
+            f"{html.escape(title)}</span><br/>"
+            f"<span style='font-size:{subtitle_size}px;color:#5f677a'>{html.escape(subtitle)}</span></div>"
+        )
+
+    def _apply_responsive_ui(self, force=False):
+        scale = self._calc_ui_scale()
+        if not force and abs(scale - self._ui_scale) < 0.04:
+            return
+
+        self._ui_scale = scale
+        self.setStyleSheet(build_modern_style(scale))
+        self.lbl_orig_meta.setMinimumHeight(self._scale_px(72))
+        self.lbl_proc_meta.setMinimumHeight(self._scale_px(72))
+        self.left_scroll.setMinimumSize(self._scale_px(220), self._scale_px(190))
+        self.right_scroll.setMinimumSize(self._scale_px(220), self._scale_px(190))
+        self.tabs.setMinimumHeight(self._scale_px(340))
+
+        if self.original_image is None:
+            self.left_label.setText(
+                self._panel_placeholder_html(
+                    "Kaynak g\u00f6r\u00fcnt\u00fc",
+                    "Ara\u00e7 \u00e7ubu\u011fundan \u00ab G\u00f6r\u00fcnt\u00fc Y\u00fckle \u00bb",
+                )
+            )
+        if self.current_image is None:
+            self.right_label.setText(
+                self._panel_placeholder_html(
+                    "\u0130\u015flenmi\u015f \u00f6nizleme",
+                    "\u0130\u015flemler bu panelde",
+                )
+            )
+
+        total_height = max(self.height(), self.minimumHeight())
+        self.main_splitter.setSizes([int(total_height * 0.57), int(total_height * 0.43)])
+        self.update_panel_metadata()
+
     def setup_ui(self):
         cw = QWidget()
         self.setCentralWidget(cw)
         ml = QVBoxLayout(cw)
-        ml.setSpacing(8)
-        ml.setContentsMargins(8, 6, 8, 8)
+        ml.setSpacing(10)
+        ml.setContentsMargins(10, 8, 10, 10)
         top_h = QHBoxLayout()
+        top_h.setSpacing(12)
         lc = QVBoxLayout()
+        lc.setSpacing(10)
         self.lbl_orig_meta = QLabel()
         self.lbl_orig_meta.setObjectName("panelMeta")
         self.lbl_orig_meta.setTextFormat(Qt.RichText)
         self.lbl_orig_meta.setWordWrap(True)
-        self.lbl_orig_meta.setMinimumHeight(34)
+        self.lbl_orig_meta.setMinimumHeight(72)
         self.left_label = QLabel(
             "<div align='center'><span style='font-size:15px;font-weight:600;color:#9aa3b8'>Kaynak görüntü</span><br/>"
             "<span style='font-size:12px;color:#5f677a'>Araç çubuğundan « Görüntü Yükle »</span></div>"
@@ -230,11 +368,12 @@ class MainWindow(QMainWindow):
         lw.setLayout(lc)
         top_h.addWidget(lw, 2)
         rc = QVBoxLayout()
+        rc.setSpacing(10)
         self.lbl_proc_meta = QLabel()
         self.lbl_proc_meta.setObjectName("panelMeta")
         self.lbl_proc_meta.setTextFormat(Qt.RichText)
         self.lbl_proc_meta.setWordWrap(True)
-        self.lbl_proc_meta.setMinimumHeight(34)
+        self.lbl_proc_meta.setMinimumHeight(72)
         self.right_label = QLabel(
             "<div align='center'><span style='font-size:15px;font-weight:600;color:#9aa3b8'>İşlenmiş önizleme</span><br/>"
             "<span style='font-size:12px;color:#5f677a'>İşlemler bu panelde</span></div>"
@@ -274,18 +413,19 @@ class MainWindow(QMainWindow):
         til.setContentsMargins(0, 0, 0, 0)
         til.addLayout(top_h)
         self.tabs = QTabWidget()
-        self.tabs.setMinimumHeight(260)
+        self.tabs.setMinimumHeight(340)
         self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-        sp = QSplitter(Qt.Vertical)
-        sp.addWidget(top_inner)
-        sp.addWidget(self.tabs)
-        sp.setStretchFactor(0, 1)
-        sp.setStretchFactor(1, 1)
-        sp.setSizes([420, 320])
-        sp.setChildrenCollapsible(False)
-        ml.addWidget(sp, 1)
+        self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter.addWidget(top_inner)
+        self.main_splitter.addWidget(self.tabs)
+        self.main_splitter.setStretchFactor(0, 3)
+        self.main_splitter.setStretchFactor(1, 2)
+        self.main_splitter.setSizes([470, 350])
+        self.main_splitter.setChildrenCollapsible(False)
+        ml.addWidget(self.main_splitter, 1)
         self.setup_tabs()
         self.setup_toolbar()
+        self._apply_responsive_ui(force=True)
         self.update_panel_metadata()
 
     def setup_toolbar(self):
@@ -311,6 +451,7 @@ class MainWindow(QMainWindow):
         t1.setAttribute(Qt.WA_StyledBackground, True)
         l1 = QVBoxLayout(t1)
         l1.setContentsMargins(2, 2, 2, 2)
+        l1.setSpacing(12)
         g1 = QGroupBox("Temel dönüşüm")
         v1 = QVBoxLayout()
         b1 = QPushButton("Gri Dönüşüm")
@@ -356,6 +497,7 @@ class MainWindow(QMainWindow):
         t2.setAttribute(Qt.WA_StyledBackground, True)
         l2 = QVBoxLayout(t2)
         l2.setContentsMargins(2, 2, 2, 2)
+        l2.setSpacing(12)
         gr = QGroupBox("Döndürme")
         lr = QHBoxLayout()
         self.spin_angle = QSpinBox()
@@ -428,6 +570,7 @@ class MainWindow(QMainWindow):
         t3.setAttribute(Qt.WA_StyledBackground, True)
         l3 = QVBoxLayout(t3)
         l3.setContentsMargins(2, 2, 2, 2)
+        l3.setSpacing(12)
         gh = QGroupBox("Histogram")
         vh = QVBoxLayout()
         bh_show = QPushButton("Histogram Analizini Göster")
@@ -520,6 +663,7 @@ class MainWindow(QMainWindow):
         t4.setAttribute(Qt.WA_StyledBackground, True)
         l4 = QVBoxLayout(t4)
         l4.setContentsMargins(2, 2, 2, 2)
+        l4.setSpacing(12)
         gm = QGroupBox("Mean")
         mm = QHBoxLayout()
         self.spin_mean_k = QSpinBox()
@@ -587,6 +731,7 @@ class MainWindow(QMainWindow):
         t5.setAttribute(Qt.WA_StyledBackground, True)
         l5 = QVBoxLayout(t5)
         l5.setContentsMargins(2, 2, 2, 2)
+        l5.setSpacing(12)
         ge = QGroupBox("Kenar")
         ve = QVBoxLayout()
         bp = QPushButton("Prewitt")
@@ -671,7 +816,7 @@ class MainWindow(QMainWindow):
             esc = "<br/>".join(html.escape(x) for x in lines)
             return (
                 f"<div><span style='font-weight:600'>{html.escape(title)}</span>"
-                f"<span style='display:block;margin-top:6px;color:#9ca3b8;font-size:11px'>{esc}</span></div>"
+                f"<span style='display:block;margin-top:6px;color:#9ca3b8;font-size:{self._scale_px(12)}px'>{esc}</span></div>"
             )
 
         if self.original_image is None:
@@ -964,31 +1109,11 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._apply_responsive_ui()
         self._resize_fit_timer.start(120)
 
 
-MODERN_STYLE = """
-QMainWindow, QDialog { background-color: #14151c; }
-QWidget { color: #ececf3; font-family: 'Segoe UI', sans-serif; font-size: 13px; }
-QLabel { color: #dce0eb; }
-QLabel#panelMeta { padding: 10px 12px; background: #1e2030; border: 1px solid #2e3348; border-radius: 12px; }
-QLabel#panelImage { border: 1px dashed #3d4a63; border-radius: 14px; background: #1a1c28; padding: 8px; }
-QGroupBox#historyCard { border: 1px solid #2e3348; border-radius: 14px; margin-top: 8px; padding: 10px; background: #1e2030; }
-QWidget#tabPage { background: #181a26; }
-QGroupBox { border: 1px solid #323848; border-radius: 10px; margin-top: 6px; padding: 8px; background: #222534; }
-QPushButton { background: #2a3145; border: 1px solid #3d4660; border-radius: 10px; padding: 8px 14px; color: #f4f6fb; }
-QPushButton:hover { background: #343d56; border-color: #5d8cff; }
-QTabWidget::pane { border: 1px solid #2e3348; border-radius: 12px; background: #181a26; padding: 6px; }
-QTabBar::tab { background: #1e2230; color: #8b92a8; padding: 8px 16px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
-QTabBar::tab:selected { background: #181a26; color: #fff; font-weight: 600; border-bottom: 3px solid #5d8cff; }
-QSlider::groove:horizontal { height: 6px; background: #12141d; border-radius: 3px; }
-QSlider::handle:horizontal { background: #e8ebf4; border: 1px solid #5d8cff; width: 14px; height: 14px; margin: -5px 0; border-radius: 7px; }
-QListWidget { background: #151721; border: 1px solid #2e3348; border-radius: 12px; }
-QSpinBox, QDoubleSpinBox, QComboBox { background: #222534; border: 1px solid #3d4660; border-radius: 8px; padding: 4px 8px; color: #ececf3; }
-QToolBar { background: #1a1c28; border-bottom: 1px solid #2e3348; padding: 8px; }
-QScrollBar:vertical { background: #151721; width: 10px; }
-QScrollBar::handle:vertical { background: #3d455c; border-radius: 5px; min-height: 24px; }
-"""
+MODERN_STYLE = build_modern_style()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
